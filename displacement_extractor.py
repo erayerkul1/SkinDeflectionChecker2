@@ -236,10 +236,48 @@ def _parse_args():
     return parser.parse_args()
 
 
-if __name__ == "__main__":
-    args = _parse_args()
-    print(f"Dosya okunuyor: {args.file}")
-    print(f"Sorgulanan node'lar: {args.nodes}")
+def _interactive_mode():
+    """Çift tıkla açıldığında kullanıcıdan bilgileri interaktif olarak alır."""
+    print("=" * 60)
+    print("  NASTRAN Displacement Extractor")
+    print("=" * 60)
 
-    results = extract_displacements(args.file, args.nodes)
-    print_results(results)
+    while True:
+        filepath = input("\nSonuç dosyası yolu (.op2 veya .h5): ").strip().strip('"').strip("'")
+        if os.path.isfile(filepath):
+            break
+        print(f"  [Hata] Dosya bulunamadı: {filepath}")
+
+    while True:
+        raw = input("Node ID listesi (boşlukla veya virgülle ayrılmış): ").strip()
+        try:
+            node_ids = [int(x) for x in raw.replace(",", " ").split()]
+            if node_ids:
+                break
+            print("  [Hata] En az bir node ID girin.")
+        except ValueError:
+            print("  [Hata] Geçersiz giriş. Sadece sayı girin (örn: 101 102 103).")
+
+    print(f"\nDosya okunuyor: {filepath}")
+    print(f"Sorgulanan node'lar: {node_ids}")
+
+    try:
+        results = extract_displacements(filepath, node_ids)
+        print_results(results)
+    except Exception as e:
+        print(f"\n[Hata] {e}")
+
+    input("\nDevam etmek için Enter'a basın...")
+
+
+if __name__ == "__main__":
+    import sys
+    # Argüman verilmişse CLI modu, verilmemişse interaktif mod (çift tıkla açma)
+    if len(sys.argv) > 1:
+        args = _parse_args()
+        print(f"Dosya okunuyor: {args.file}")
+        print(f"Sorgulanan node'lar: {args.nodes}")
+        results = extract_displacements(args.file, args.nodes)
+        print_results(results)
+    else:
+        _interactive_mode()
