@@ -351,8 +351,7 @@ class LoadExtractionApp:
         ttk.Button(bdf_row, text="Gözat...", command=self._browse_bdf).pack(side="left")
 
         # --- ID listesi (Excel / CSV) ---
-        self.node_frame_label = tk.StringVar(value="Node ID Listesi (Excel / CSV)")
-        self.node_frame = ttk.LabelFrame(self.root, textvariable=self.node_frame_label)
+        self.node_frame = ttk.LabelFrame(self.root, text="Node ID Listesi (Excel / CSV)")
         self.node_frame.pack(fill="x", **pad)
 
         ttk.Label(
@@ -418,10 +417,10 @@ class LoadExtractionApp:
     def _on_input_type_change(self):
         if self.input_type.get() == "prop":
             self.bdf_frame.pack(fill="x", padx=10, pady=5, before=self.node_frame)
-            self.node_frame_label.set("Prop ID Listesi (Excel / CSV)")
+            self.node_frame.configure(text="Prop ID Listesi (Excel / CSV)")
         else:
             self.bdf_frame.pack_forget()
-            self.node_frame_label.set("Node ID Listesi (Excel / CSV)")
+            self.node_frame.configure(text="Node ID Listesi (Excel / CSV)")
         self._node_ids = []
         self.node_info_var.set("Henüz dosya seçilmedi.")
         self.excel_var.set("")
