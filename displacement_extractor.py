@@ -284,22 +284,37 @@ def _read_node_ids_csv(filepath: str) -> List[int]:
 def _get_nodes_from_props(bdf_filepath: str, prop_ids: List[int]):
     """BDF dosyasından verilen prop ID'lerine bağlı tüm node ID'lerini döndürür.
 
-    Returns (sorted_node_ids, node_to_prop_dict).
+    Returns (sorted_node_ids, node_to_prop_dict, prop_dims_dict).
+    prop_dims_dict: {prop_id: (length, width)} — global koordinat bounding box,
+                    length = X-aralığı, width = Y-aralığı.
     """
     from pyNastran.bdf.bdf import BDF
     bdf = BDF(debug=False)
     bdf.read_bdf(bdf_filepath)
     prop_set = set(prop_ids)
     node_to_prop: dict = {}
+    prop_nodes: dict = {pid: [] for pid in prop_set}
     for elem in bdf.elements.values():
         if hasattr(elem, "pid") and elem.pid in prop_set:
             for nid in elem.nodes:
                 node_to_prop[nid] = elem.pid
+                prop_nodes[elem.pid].append(nid)
     if not node_to_prop:
         raise ValueError(
             f"Verilen prop ID'lere ({sorted(prop_set)}) bağlı hiç node bulunamadı."
         )
-    return sorted(node_to_prop.keys()), node_to_prop
+
+    prop_dims: dict = {}
+    for pid, nids in prop_nodes.items():
+        if not nids:
+            prop_dims[pid] = (0.0, 0.0)
+            continue
+        coords = [bdf.nodes[nid].get_position() for nid in set(nids)]
+        xs = [c[0] for c in coords]
+        ys = [c[1] for c in coords]
+        prop_dims[pid] = (max(xs) - min(xs), max(ys) - min(ys))
+
+    return sorted(node_to_prop.keys()), node_to_prop, prop_dims
 
 
 # ---------------------------------------------------------------------------
@@ -380,6 +395,7 @@ class LoadExtractionApp:
 
         self._node_ids: List[int] = []
         self._node_to_prop: dict = {}
+        self._prop_dims: dict = {}
 
         # --- Çalıştır butonu + durum ---
         ctrl_frame = ttk.Frame(self.root)
@@ -400,11 +416,14 @@ class LoadExtractionApp:
         result_frame = ttk.LabelFrame(self.root, text="Sonuçlar")
         result_frame.pack(fill="both", expand=True, **pad)
 
-        columns = ("Subcase", "Prop", "Node", "T1", "T2", "T3", "Resultant")
+        columns = ("Subcase", "Prop", "Length", "Width", "Node", "T1", "T2", "T3", "Resultant")
         self.tree = ttk.Treeview(result_frame, columns=columns, show="headings")
         self.tree["displaycolumns"] = ("Subcase", "Node", "T1", "T2", "T3", "Resultant")
 
-        col_widths = {"Subcase": 70, "Prop": 80, "Node": 80, "T1": 130, "T2": 130, "T3": 130, "Resultant": 130}
+        col_widths = {
+            "Subcase": 70, "Prop": 80, "Length": 100, "Width": 100,
+            "Node": 80, "T1": 130, "T2": 130, "T3": 130, "Resultant": 130,
+        }
         for col in columns:
             self.tree.heading(col, text=col)
             self.tree.column(col, width=col_widths[col], anchor="center")
@@ -427,13 +446,14 @@ class LoadExtractionApp:
         if self.input_type.get() == "prop":
             self.bdf_frame.pack(fill="x", padx=10, pady=5, before=self.node_frame)
             self.node_frame.configure(text="Prop ID Listesi (Excel / CSV)")
-            self.tree["displaycolumns"] = ("Subcase", "Prop", "Node", "T1", "T2", "T3", "Resultant")
+            self.tree["displaycolumns"] = ("Subcase", "Prop", "Length", "Width", "Node", "T1", "T2", "T3", "Resultant")
         else:
             self.bdf_frame.pack_forget()
             self.node_frame.configure(text="Node ID Listesi (Excel / CSV)")
             self.tree["displaycolumns"] = ("Subcase", "Node", "T1", "T2", "T3", "Resultant")
         self._node_ids = []
         self._node_to_prop = {}
+        self._prop_dims = {}
         self.node_info_var.set("Henüz dosya seçilmedi.")
         self.excel_var.set("")
 
@@ -528,8 +548,9 @@ class LoadExtractionApp:
     def _run_worker_prop(self, filepath: str, bdf_path: str, prop_ids: List[int]):
         try:
             self.root.after(0, lambda: self.status_var.set("BDF okunuyor..."))
-            node_ids, node_to_prop = _get_nodes_from_props(bdf_path, prop_ids)
+            node_ids, node_to_prop, prop_dims = _get_nodes_from_props(bdf_path, prop_ids)
             self._node_to_prop = node_to_prop
+            self._prop_dims = prop_dims
             self.root.after(0, lambda: self.status_var.set(f"{len(node_ids)} node bulundu, sonuçlar okunuyor..."))
             results = extract_displacements(filepath, node_ids)
             self.root.after(0, self._populate_table, results)
@@ -560,13 +581,21 @@ class LoadExtractionApp:
             for nid in sorted(node_data):
                 d = node_data[nid]
                 tag = "odd" if row_count % 2 else "even"
-                prop_val = self._node_to_prop.get(nid, "") if self.input_type.get() == "prop" else ""
+                if self.input_type.get() == "prop":
+                    prop_val = self._node_to_prop.get(nid, "")
+                    length_val, width_val = self._prop_dims.get(prop_val, ("", ""))
+                    length_str = f"{length_val:.3f}" if isinstance(length_val, float) else ""
+                    width_str = f"{width_val:.3f}" if isinstance(width_val, float) else ""
+                else:
+                    prop_val = length_str = width_str = ""
                 self.tree.insert(
                     "",
                     "end",
                     values=(
                         subcase_id,
                         prop_val,
+                        length_str,
+                        width_str,
                         nid,
                         f"{d['T1']:.3f}",
                         f"{d['T2']:.3f}",
