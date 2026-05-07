@@ -178,6 +178,42 @@ def print_results(results: Dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Excel yardımcısı
+# ---------------------------------------------------------------------------
+
+def _read_node_ids_from_excel(filepath: str) -> List[int]:
+    """Excel dosyasının A sütunundan node ID listesi okur.
+
+    İlk satır başlık ise (sayı değilse) otomatik atlanır.
+    Boş hücreler görmezden gelinir.
+    """
+    try:
+        import openpyxl
+    except ImportError:
+        raise ImportError("openpyxl kurulu değil. Kurmak için: pip install openpyxl")
+
+    wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
+    ws = wb.active
+
+    node_ids = []
+    for row in ws.iter_rows(min_col=1, max_col=1, values_only=True):
+        val = row[0]
+        if val is None:
+            continue
+        try:
+            node_ids.append(int(val))
+        except (TypeError, ValueError):
+            pass  # başlık satırı veya sayı olmayan hücre — atla
+
+    wb.close()
+
+    if not node_ids:
+        raise ValueError("Excel dosyasının A sütununda geçerli node ID bulunamadı.")
+
+    return node_ids
+
+
+# ---------------------------------------------------------------------------
 # GUI
 # ---------------------------------------------------------------------------
 
@@ -205,20 +241,31 @@ class LoadExtractionApp:
             side="left", padx=(0, 8), pady=6
         )
 
-        # --- Node ID girişi ---
-        node_frame = ttk.LabelFrame(self.root, text="Node ID Listesi")
+        # --- Node ID girişi (Excel) ---
+        node_frame = ttk.LabelFrame(self.root, text="Node ID Listesi (Excel)")
         node_frame.pack(fill="x", **pad)
 
         ttk.Label(
             node_frame,
-            text="Boşluk veya virgülle ayrılmış node ID'leri girin (örn: 101 102 103)",
+            text="Node ID'leri içeren Excel dosyasını seçin  (A sütunu, başlık satırı varsa otomatik atlanır)",
             foreground="gray",
         ).pack(anchor="w", padx=8, pady=(4, 0))
 
-        self.node_var = tk.StringVar()
-        ttk.Entry(node_frame, textvariable=self.node_var, width=80).pack(
-            fill="x", padx=8, pady=(2, 8)
+        excel_row = ttk.Frame(node_frame)
+        excel_row.pack(fill="x", padx=8, pady=(2, 4))
+
+        self.excel_var = tk.StringVar()
+        ttk.Entry(excel_row, textvariable=self.excel_var, width=60).pack(
+            side="left", fill="x", expand=True, padx=(0, 4)
         )
+        ttk.Button(excel_row, text="Gözat...", command=self._browse_excel).pack(side="left")
+
+        self.node_info_var = tk.StringVar(value="Henüz dosya seçilmedi.")
+        ttk.Label(node_frame, textvariable=self.node_info_var, foreground="gray").pack(
+            anchor="w", padx=8, pady=(0, 6)
+        )
+
+        self._node_ids: List[int] = []
 
         # --- Çalıştır butonu + durum ---
         ctrl_frame = ttk.Frame(self.root)
@@ -271,29 +318,41 @@ class LoadExtractionApp:
         if path:
             self.file_var.set(path)
 
+    def _browse_excel(self):
+        path = filedialog.askopenfilename(
+            title="Node ID listesi içeren Excel dosyasını seç",
+            filetypes=[
+                ("Excel Dosyaları", "*.xlsx *.xls *.xlsm"),
+                ("Tüm Dosyalar", "*.*"),
+            ],
+        )
+        if not path:
+            return
+        self.excel_var.set(path)
+        try:
+            self._node_ids = _read_node_ids_from_excel(path)
+            self.node_info_var.set(f"{len(self._node_ids)} node yüklendi.")
+        except Exception as e:
+            self._node_ids = []
+            self.node_info_var.set("Yükleme hatası!")
+            messagebox.showerror("Excel Okuma Hatası", str(e))
+
     def _run(self):
         filepath = self.file_var.get().strip()
-        raw_nodes = self.node_var.get().strip()
 
         if not filepath:
             messagebox.showwarning("Eksik Bilgi", "Lütfen bir sonuç dosyası seçin.")
             return
 
-        if not raw_nodes:
-            messagebox.showwarning("Eksik Bilgi", "Lütfen en az bir node ID girin.")
-            return
-
-        try:
-            node_ids = [int(x) for x in raw_nodes.replace(",", " ").split()]
-        except ValueError:
-            messagebox.showerror("Hata", "Node ID'leri geçersiz. Lütfen sadece tam sayı girin.")
+        if not self._node_ids:
+            messagebox.showwarning("Eksik Bilgi", "Lütfen node ID listesi içeren bir Excel dosyası seçin.")
             return
 
         self.run_btn.config(state="disabled")
         self.status_var.set("Okunuyor...")
         self._clear_table()
 
-        threading.Thread(target=self._run_worker, args=(filepath, node_ids), daemon=True).start()
+        threading.Thread(target=self._run_worker, args=(filepath, list(self._node_ids)), daemon=True).start()
 
     def _run_worker(self, filepath: str, node_ids: List[int]):
         try:
