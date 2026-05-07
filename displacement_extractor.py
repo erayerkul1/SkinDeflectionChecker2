@@ -222,8 +222,8 @@ def print_results(results: Dict) -> None:
             d = node_data[nid]
             print(
                 f"  {nid:>8}  "
-                f"{d['T1']:>{col_w}.6e}  {d['T2']:>{col_w}.6e}  "
-                f"{d['T3']:>{col_w}.6e}  {d['Resultant']:>{col_w}.6e}"
+                f"{d['T1']:>{col_w}.3f}  {d['T2']:>{col_w}.3f}  "
+                f"{d['T3']:>{col_w}.3f}  {d['Resultant']:>{col_w}.3f}"
             )
 
 
@@ -281,6 +281,23 @@ def _read_node_ids_csv(filepath: str) -> List[int]:
     return node_ids
 
 
+def _get_nodes_from_props(bdf_filepath: str, prop_ids: List[int]) -> List[int]:
+    """BDF dosyasından verilen prop ID'lerine bağlı tüm node ID'lerini döndürür."""
+    from pyNastran.bdf.bdf import BDF
+    bdf = BDF(debug=False)
+    bdf.read_bdf(bdf_filepath)
+    prop_set = set(prop_ids)
+    node_ids: set = set()
+    for elem in bdf.elements.values():
+        if hasattr(elem, "pid") and elem.pid in prop_set:
+            node_ids.update(elem.nodes)
+    if not node_ids:
+        raise ValueError(
+            f"Verilen prop ID'lere ({sorted(prop_set)}) bağlı hiç node bulunamadı."
+        )
+    return sorted(node_ids)
+
+
 # ---------------------------------------------------------------------------
 # GUI
 # ---------------------------------------------------------------------------
@@ -309,17 +326,42 @@ class LoadExtractionApp:
             side="left", padx=(0, 8), pady=6
         )
 
-        # --- Node ID girişi (Excel) ---
-        node_frame = ttk.LabelFrame(self.root, text="Node ID Listesi (Excel / CSV)")
-        node_frame.pack(fill="x", **pad)
+        # --- Giriş türü seçimi ---
+        type_frame = ttk.LabelFrame(self.root, text="Giriş Türü")
+        type_frame.pack(fill="x", **pad)
+
+        self.input_type = tk.StringVar(value="node")
+        ttk.Radiobutton(
+            type_frame, text="Node ID", variable=self.input_type,
+            value="node", command=self._on_input_type_change
+        ).pack(side="left", padx=12, pady=6)
+        ttk.Radiobutton(
+            type_frame, text="Prop ID", variable=self.input_type,
+            value="prop", command=self._on_input_type_change
+        ).pack(side="left", padx=4, pady=6)
+
+        # --- BDF dosyası (sadece Prop ID modunda görünür) ---
+        self.bdf_frame = ttk.LabelFrame(self.root, text="BDF Dosyası")
+        self.bdf_var = tk.StringVar()
+        bdf_row = ttk.Frame(self.bdf_frame)
+        bdf_row.pack(fill="x", padx=8, pady=6)
+        ttk.Entry(bdf_row, textvariable=self.bdf_var, width=60).pack(
+            side="left", fill="x", expand=True, padx=(0, 4)
+        )
+        ttk.Button(bdf_row, text="Gözat...", command=self._browse_bdf).pack(side="left")
+
+        # --- ID listesi (Excel / CSV) ---
+        self.node_frame_label = tk.StringVar(value="Node ID Listesi (Excel / CSV)")
+        self.node_frame = ttk.LabelFrame(self.root, textvariable=self.node_frame_label)
+        self.node_frame.pack(fill="x", **pad)
 
         ttk.Label(
-            node_frame,
-            text="Node ID'leri içeren dosyayı seçin  (.xlsx, .xlsm, .csv — ilk sütun, başlık varsa otomatik atlanır)",
+            self.node_frame,
+            text=".xlsx, .xlsm, .csv — ilk sütun, başlık varsa otomatik atlanır",
             foreground="gray",
         ).pack(anchor="w", padx=8, pady=(4, 0))
 
-        excel_row = ttk.Frame(node_frame)
+        excel_row = ttk.Frame(self.node_frame)
         excel_row.pack(fill="x", padx=8, pady=(2, 4))
 
         self.excel_var = tk.StringVar()
@@ -329,7 +371,7 @@ class LoadExtractionApp:
         ttk.Button(excel_row, text="Gözat...", command=self._browse_excel).pack(side="left")
 
         self.node_info_var = tk.StringVar(value="Henüz dosya seçilmedi.")
-        ttk.Label(node_frame, textvariable=self.node_info_var, foreground="gray").pack(
+        ttk.Label(self.node_frame, textvariable=self.node_info_var, foreground="gray").pack(
             anchor="w", padx=8, pady=(0, 6)
         )
 
@@ -373,6 +415,17 @@ class LoadExtractionApp:
         self.tree.tag_configure("odd", background="#f5f5f5")
         self.tree.tag_configure("even", background="#ffffff")
 
+    def _on_input_type_change(self):
+        if self.input_type.get() == "prop":
+            self.bdf_frame.pack(fill="x", padx=10, pady=5, before=self.node_frame)
+            self.node_frame_label.set("Prop ID Listesi (Excel / CSV)")
+        else:
+            self.bdf_frame.pack_forget()
+            self.node_frame_label.set("Node ID Listesi (Excel / CSV)")
+        self._node_ids = []
+        self.node_info_var.set("Henüz dosya seçilmedi.")
+        self.excel_var.set("")
+
     def _browse_file(self):
         path = filedialog.askopenfilename(
             title="Sonuç dosyası seç",
@@ -385,6 +438,17 @@ class LoadExtractionApp:
         )
         if path:
             self.file_var.set(path)
+
+    def _browse_bdf(self):
+        path = filedialog.askopenfilename(
+            title="BDF dosyası seç",
+            filetypes=[
+                ("BDF Dosyaları", "*.bdf *.dat *.nas"),
+                ("Tüm Dosyalar", "*.*"),
+            ],
+        )
+        if path:
+            self.bdf_var.set(path)
 
     def _browse_excel(self):
         path = filedialog.askopenfilename(
@@ -401,11 +465,12 @@ class LoadExtractionApp:
         self.excel_var.set(path)
         try:
             self._node_ids = _read_node_ids_from_file(path)
-            self.node_info_var.set(f"{len(self._node_ids)} node yüklendi.")
+            kind = "prop" if self.input_type.get() == "prop" else "node"
+            self.node_info_var.set(f"{len(self._node_ids)} {kind} ID yüklendi.")
         except Exception as e:
             self._node_ids = []
             self.node_info_var.set("Yükleme hatası!")
-            messagebox.showerror("Excel Okuma Hatası", str(e))
+            messagebox.showerror("Dosya Okuma Hatası", str(e))
 
     def _run(self):
         filepath = self.file_var.get().strip()
@@ -415,17 +480,45 @@ class LoadExtractionApp:
             return
 
         if not self._node_ids:
-            messagebox.showwarning("Eksik Bilgi", "Lütfen node ID listesi içeren bir Excel dosyası seçin.")
+            kind = "prop" if self.input_type.get() == "prop" else "node"
+            messagebox.showwarning("Eksik Bilgi", f"Lütfen {kind} ID listesi içeren bir Excel/CSV dosyası seçin.")
             return
+
+        if self.input_type.get() == "prop":
+            bdf_path = self.bdf_var.get().strip()
+            if not bdf_path:
+                messagebox.showwarning("Eksik Bilgi", "Lütfen BDF dosyasını seçin.")
+                return
 
         self.run_btn.config(state="disabled")
         self.status_var.set("Okunuyor...")
         self._clear_table()
 
-        threading.Thread(target=self._run_worker, args=(filepath, list(self._node_ids)), daemon=True).start()
+        if self.input_type.get() == "prop":
+            threading.Thread(
+                target=self._run_worker_prop,
+                args=(filepath, self.bdf_var.get().strip(), list(self._node_ids)),
+                daemon=True,
+            ).start()
+        else:
+            threading.Thread(
+                target=self._run_worker,
+                args=(filepath, list(self._node_ids)),
+                daemon=True,
+            ).start()
 
     def _run_worker(self, filepath: str, node_ids: List[int]):
         try:
+            results = extract_displacements(filepath, node_ids)
+            self.root.after(0, self._populate_table, results)
+        except Exception as e:
+            self.root.after(0, self._show_error, str(e))
+
+    def _run_worker_prop(self, filepath: str, bdf_path: str, prop_ids: List[int]):
+        try:
+            self.root.after(0, lambda: self.status_var.set("BDF okunuyor..."))
+            node_ids = _get_nodes_from_props(bdf_path, prop_ids)
+            self.root.after(0, lambda: self.status_var.set(f"{len(node_ids)} node bulundu, sonuçlar okunuyor..."))
             results = extract_displacements(filepath, node_ids)
             self.root.after(0, self._populate_table, results)
         except Exception as e:
@@ -461,10 +554,10 @@ class LoadExtractionApp:
                     values=(
                         subcase_id,
                         nid,
-                        f"{d['T1']:.6e}",
-                        f"{d['T2']:.6e}",
-                        f"{d['T3']:.6e}",
-                        f"{d['Resultant']:.6e}",
+                        f"{d['T1']:.3f}",
+                        f"{d['T2']:.3f}",
+                        f"{d['T3']:.3f}",
+                        f"{d['Resultant']:.3f}",
                     ),
                     tags=(tag,),
                 )
