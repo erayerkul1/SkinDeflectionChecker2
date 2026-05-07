@@ -24,14 +24,17 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from typing import Dict, List
 
-# Anaconda Python ile çalışmıyorsak kendimizi onunla yeniden başlat
-_ANACONDA_PYTHON = r"C:\ProgramData\anaconda3\python.exe"
-if (
-    os.path.exists(_ANACONDA_PYTHON)
-    and os.path.abspath(sys.executable) != os.path.abspath(_ANACONDA_PYTHON)
-):
-    subprocess.Popen([_ANACONDA_PYTHON] + sys.argv)
-    sys.exit()
+_IS_FROZEN = getattr(sys, "frozen", False)  # PyInstaller ile exe yapılmış mı?
+
+# Exe değilse ve yanlış Python ile çalışıyorsak Anaconda ile yeniden başlat
+if not _IS_FROZEN:
+    _ANACONDA_PYTHON = r"C:\ProgramData\anaconda3\python.exe"
+    if (
+        os.path.exists(_ANACONDA_PYTHON)
+        and os.path.abspath(sys.executable) != os.path.abspath(_ANACONDA_PYTHON)
+    ):
+        subprocess.Popen([_ANACONDA_PYTHON] + sys.argv)
+        sys.exit()
 
 # Üçüncü taraf kütüphaneleri kontrol et
 _missing = []
@@ -55,13 +58,21 @@ except ImportError:
 if _missing:
     _root = tk.Tk()
     _root.withdraw()
-    messagebox.showerror(
-        "Eksik Kütüphaneler",
-        "Şu paketler kurulu değil:\n"
-        + ", ".join(_missing)
-        + "\n\nAnaconda Prompt'ta şunu çalıştırın:\n"
-        + "pip install " + " ".join(_missing)
-    )
+    if _IS_FROZEN:
+        messagebox.showerror(
+            "Kütüphane Hatası",
+            "Şu kütüphaneler exe içinde bulunamadı:\n"
+            + ", ".join(_missing)
+            + "\n\nLütfen geliştiriciye bildirin."
+        )
+    else:
+        messagebox.showerror(
+            "Eksik Kütüphaneler",
+            "Şu paketler kurulu değil:\n"
+            + ", ".join(_missing)
+            + "\n\nAnaconda Prompt'ta şunu çalıştırın:\n"
+            + "pip install " + " ".join(_missing)
+        )
     sys.exit(1)
 
 
