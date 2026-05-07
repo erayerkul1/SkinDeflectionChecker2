@@ -13,11 +13,21 @@ Kullanım (CLI):
     python displacement_extractor.py --file results.op2 --nodes 101 102 103
 """
 
-import argparse
-import math
 import os
 import subprocess
 import sys
+
+# Anaconda Python ile çalışmıyorsak kendimizi onunla yeniden başlat
+_ANACONDA_PYTHON = r"C:\ProgramData\anaconda3\python.exe"
+if (
+    os.path.exists(_ANACONDA_PYTHON)
+    and os.path.abspath(sys.executable) != os.path.abspath(_ANACONDA_PYTHON)
+):
+    subprocess.Popen([_ANACONDA_PYTHON] + sys.argv)
+    sys.exit()
+
+import argparse
+import math
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
