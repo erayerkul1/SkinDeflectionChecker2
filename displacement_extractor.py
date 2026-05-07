@@ -26,11 +26,34 @@ from typing import Dict, List
 
 def _ensure_package(pip_name: str, import_name: str = None) -> None:
     """Paket kurulu değilse script'in kendi Python'u ile otomatik kurar."""
+    import importlib
     import_name = import_name or pip_name
+
+    try:
+        __import__(import_name)
+        return
+    except ImportError:
+        pass
+
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", pip_name])
+    except subprocess.CalledProcessError:
+        raise RuntimeError(
+            f"'{pip_name}' paketi otomatik kurulamadı.\n\n"
+            f"Lütfen şu komutu çalıştırın:\n"
+            f"{sys.executable} -m pip install {pip_name}"
+        )
+
+    # Yeni kurulan paketi mevcut oturumda görünür kıl
+    importlib.invalidate_caches()
+
     try:
         __import__(import_name)
     except ImportError:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", pip_name])
+        raise RuntimeError(
+            f"'{pip_name}' kuruldu ama import edilemiyor.\n\n"
+            f"Scripti kapatıp yeniden açın."
+        )
 
 
 # ---------------------------------------------------------------------------
