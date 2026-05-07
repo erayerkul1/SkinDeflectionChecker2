@@ -15,7 +15,6 @@ Kullanım (CLI):
 
 import argparse
 import csv
-import importlib
 import math
 import os
 import subprocess
@@ -34,43 +33,36 @@ if (
     subprocess.Popen([_ANACONDA_PYTHON] + sys.argv)
     sys.exit()
 
+# Üçüncü taraf kütüphaneleri kontrol et
+_missing = []
+try:
+    import h5py
+except ImportError:
+    _missing.append("h5py")
+try:
+    import numpy as np
+except ImportError:
+    _missing.append("numpy")
+try:
+    import openpyxl
+except ImportError:
+    _missing.append("openpyxl")
+try:
+    from pyNastran.op2.op2 import OP2
+except ImportError:
+    _missing.append("pyNastran")
 
-def _ensure_package(pip_name: str, import_name: str = None) -> None:
-    """Paket kurulu değilse script'in kendi Python'u ile otomatik kurar."""
-    import_name = import_name or pip_name
-    try:
-        __import__(import_name)
-        return
-    except ImportError:
-        pass
-    try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", pip_name])
-    except subprocess.CalledProcessError:
-        raise RuntimeError(
-            f"'{pip_name}' paketi otomatik kurulamadı.\n\n"
-            f"Lütfen şu komutu çalıştırın:\n"
-            f"{sys.executable} -m pip install {pip_name}"
-        )
-    importlib.invalidate_caches()
-    try:
-        __import__(import_name)
-    except ImportError:
-        raise RuntimeError(
-            f"'{pip_name}' kuruldu ama import edilemiyor.\n\n"
-            f"Scripti kapatıp yeniden açın."
-        )
-
-
-# Üçüncü taraf kütüphaneleri kur ve import et
-_ensure_package("openpyxl")
-_ensure_package("h5py")
-_ensure_package("numpy")
-_ensure_package("pyNastran")
-
-import h5py
-import numpy as np
-import openpyxl
-from pyNastran.op2.op2 import OP2
+if _missing:
+    _root = tk.Tk()
+    _root.withdraw()
+    messagebox.showerror(
+        "Eksik Kütüphaneler",
+        "Şu paketler kurulu değil:\n"
+        + ", ".join(_missing)
+        + "\n\nAnaconda Prompt'ta şunu çalıştırın:\n"
+        + "pip install " + " ".join(_missing)
+    )
+    sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
