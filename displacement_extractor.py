@@ -281,21 +281,25 @@ def _read_node_ids_csv(filepath: str) -> List[int]:
     return node_ids
 
 
-def _get_nodes_from_props(bdf_filepath: str, prop_ids: List[int]) -> List[int]:
-    """BDF dosyasından verilen prop ID'lerine bağlı tüm node ID'lerini döndürür."""
+def _get_nodes_from_props(bdf_filepath: str, prop_ids: List[int]):
+    """BDF dosyasından verilen prop ID'lerine bağlı tüm node ID'lerini döndürür.
+
+    Returns (sorted_node_ids, node_to_prop_dict).
+    """
     from pyNastran.bdf.bdf import BDF
     bdf = BDF(debug=False)
     bdf.read_bdf(bdf_filepath)
     prop_set = set(prop_ids)
-    node_ids: set = set()
+    node_to_prop: dict = {}
     for elem in bdf.elements.values():
         if hasattr(elem, "pid") and elem.pid in prop_set:
-            node_ids.update(elem.nodes)
-    if not node_ids:
+            for nid in elem.nodes:
+                node_to_prop[nid] = elem.pid
+    if not node_to_prop:
         raise ValueError(
             f"Verilen prop ID'lere ({sorted(prop_set)}) bağlı hiç node bulunamadı."
         )
-    return sorted(node_ids)
+    return sorted(node_to_prop.keys()), node_to_prop
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +379,7 @@ class LoadExtractionApp:
         )
 
         self._node_ids: List[int] = []
+        self._node_to_prop: dict = {}
 
         # --- Çalıştır butonu + durum ---
         ctrl_frame = ttk.Frame(self.root)
@@ -382,6 +387,9 @@ class LoadExtractionApp:
 
         self.run_btn = ttk.Button(ctrl_frame, text="Çalıştır", command=self._run)
         self.run_btn.pack(side="left")
+
+        self.export_btn = ttk.Button(ctrl_frame, text="Excel'e Aktar", command=self._export_excel)
+        self.export_btn.pack(side="left", padx=6)
 
         self.status_var = tk.StringVar(value="Hazır.")
         ttk.Label(ctrl_frame, textvariable=self.status_var, foreground="gray").pack(
@@ -392,10 +400,11 @@ class LoadExtractionApp:
         result_frame = ttk.LabelFrame(self.root, text="Sonuçlar")
         result_frame.pack(fill="both", expand=True, **pad)
 
-        columns = ("Subcase", "Node", "T1", "T2", "T3", "Resultant")
+        columns = ("Subcase", "Prop", "Node", "T1", "T2", "T3", "Resultant")
         self.tree = ttk.Treeview(result_frame, columns=columns, show="headings")
+        self.tree["displaycolumns"] = ("Subcase", "Node", "T1", "T2", "T3", "Resultant")
 
-        col_widths = {"Subcase": 70, "Node": 80, "T1": 130, "T2": 130, "T3": 130, "Resultant": 130}
+        col_widths = {"Subcase": 70, "Prop": 80, "Node": 80, "T1": 130, "T2": 130, "T3": 130, "Resultant": 130}
         for col in columns:
             self.tree.heading(col, text=col)
             self.tree.column(col, width=col_widths[col], anchor="center")
@@ -418,10 +427,13 @@ class LoadExtractionApp:
         if self.input_type.get() == "prop":
             self.bdf_frame.pack(fill="x", padx=10, pady=5, before=self.node_frame)
             self.node_frame.configure(text="Prop ID Listesi (Excel / CSV)")
+            self.tree["displaycolumns"] = ("Subcase", "Prop", "Node", "T1", "T2", "T3", "Resultant")
         else:
             self.bdf_frame.pack_forget()
             self.node_frame.configure(text="Node ID Listesi (Excel / CSV)")
+            self.tree["displaycolumns"] = ("Subcase", "Node", "T1", "T2", "T3", "Resultant")
         self._node_ids = []
+        self._node_to_prop = {}
         self.node_info_var.set("Henüz dosya seçilmedi.")
         self.excel_var.set("")
 
@@ -516,7 +528,8 @@ class LoadExtractionApp:
     def _run_worker_prop(self, filepath: str, bdf_path: str, prop_ids: List[int]):
         try:
             self.root.after(0, lambda: self.status_var.set("BDF okunuyor..."))
-            node_ids = _get_nodes_from_props(bdf_path, prop_ids)
+            node_ids, node_to_prop = _get_nodes_from_props(bdf_path, prop_ids)
+            self._node_to_prop = node_to_prop
             self.root.after(0, lambda: self.status_var.set(f"{len(node_ids)} node bulundu, sonuçlar okunuyor..."))
             results = extract_displacements(filepath, node_ids)
             self.root.after(0, self._populate_table, results)
@@ -547,11 +560,13 @@ class LoadExtractionApp:
             for nid in sorted(node_data):
                 d = node_data[nid]
                 tag = "odd" if row_count % 2 else "even"
+                prop_val = self._node_to_prop.get(nid, "") if self.input_type.get() == "prop" else ""
                 self.tree.insert(
                     "",
                     "end",
                     values=(
                         subcase_id,
+                        prop_val,
                         nid,
                         f"{d['T1']:.3f}",
                         f"{d['T2']:.3f}",
@@ -567,6 +582,30 @@ class LoadExtractionApp:
             status += "  Uyarı: " + " | ".join(warnings)
         self.status_var.set(status)
         self.run_btn.config(state="normal")
+
+    def _export_excel(self):
+        rows = [self.tree.item(iid)["values"] for iid in self.tree.get_children()]
+        if not rows:
+            messagebox.showwarning("Dışa Aktar", "Aktarılacak sonuç yok.")
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel Dosyası", "*.xlsx"), ("Tüm Dosyalar", "*.*")],
+            title="Sonuçları kaydet",
+        )
+        if not path:
+            return
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Displacement"
+        headers = list(self.tree["displaycolumns"])
+        all_cols = list(self.tree["columns"])
+        col_indices = [all_cols.index(c) for c in headers]
+        ws.append(headers)
+        for row in rows:
+            ws.append([row[i] for i in col_indices])
+        wb.save(path)
+        messagebox.showinfo("Dışa Aktar", f"Kaydedildi:\n{path}")
 
     def _show_error(self, message: str):
         self.status_var.set("Hata oluştu.")
