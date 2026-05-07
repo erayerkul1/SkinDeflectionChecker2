@@ -31,6 +31,15 @@ except ImportError:
     _missing.append("h5py")
 try:
     import numpy as np
+    # numpy 2.x'te np.float kaldırıldı; eski openpyxl sürümleri bunu kullanıyor
+    if not hasattr(np, "float"):
+        np.float = float
+    if not hasattr(np, "int"):
+        np.int = int
+    if not hasattr(np, "complex"):
+        np.complex = complex
+    if not hasattr(np, "bool"):
+        np.bool = bool
 except ImportError:
     _missing.append("numpy")
 try:
