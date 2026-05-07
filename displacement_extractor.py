@@ -16,10 +16,21 @@ Kullanım (CLI):
 import argparse
 import math
 import os
+import subprocess
+import sys
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from typing import Dict, List
+
+
+def _ensure_package(pip_name: str, import_name: str = None) -> None:
+    """Paket kurulu değilse script'in kendi Python'u ile otomatik kurar."""
+    import_name = import_name or pip_name
+    try:
+        __import__(import_name)
+    except ImportError:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", pip_name])
 
 
 # ---------------------------------------------------------------------------
@@ -28,10 +39,11 @@ from typing import Dict, List
 
 def _read_op2(filepath: str, node_ids: List[int]) -> Dict:
     """OP2 dosyasından displacement verisi okur."""
+    _ensure_package("pyNastran")
     try:
         from pyNastran.op2.op2 import OP2
     except ImportError:
-        raise ImportError("pyNastran kurulu değil. Kurmak için: pip install pyNastran")
+        raise ImportError("pyNastran kurulamadı. Lütfen manuel olarak: pip install pyNastran")
 
     op2 = OP2(debug=False)
     op2.read_op2(filepath)
@@ -66,11 +78,13 @@ def _read_op2(filepath: str, node_ids: List[int]) -> Dict:
 
 def _read_h5(filepath: str, node_ids: List[int]) -> Dict:
     """NASTRAN HDF5 dosyasından displacement verisi okur."""
+    _ensure_package("h5py")
+    _ensure_package("numpy")
     try:
         import h5py
         import numpy as np
     except ImportError:
-        raise ImportError("h5py veya numpy kurulu değil. Kurmak için: pip install h5py numpy")
+        raise ImportError("h5py veya numpy kurulamadı. Lütfen manuel olarak: pip install h5py numpy")
 
     node_set = set(node_ids)
     results = {}
@@ -196,10 +210,11 @@ def _read_node_ids_from_file(filepath: str) -> List[int]:
 
 
 def _read_node_ids_xlsx(filepath: str) -> List[int]:
+    _ensure_package("openpyxl")
     try:
         import openpyxl
     except ImportError:
-        raise ImportError("openpyxl kurulu değil. Kurmak için: pip install openpyxl")
+        raise ImportError("openpyxl kurulamadı. Lütfen manuel olarak: pip install openpyxl")
 
     wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
     ws = wb.active
