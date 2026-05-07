@@ -13,9 +13,17 @@ Kullanım (CLI):
     python displacement_extractor.py --file results.op2 --nodes 101 102 103
 """
 
+import argparse
+import csv
+import importlib
+import math
 import os
 import subprocess
 import sys
+import threading
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+from typing import Dict, List
 
 # Anaconda Python ile çalışmıyorsak kendimizi onunla yeniden başlat
 _ANACONDA_PYTHON = r"C:\ProgramData\anaconda3\python.exe"
@@ -26,25 +34,15 @@ if (
     subprocess.Popen([_ANACONDA_PYTHON] + sys.argv)
     sys.exit()
 
-import argparse
-import math
-import threading
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
-from typing import Dict, List
-
 
 def _ensure_package(pip_name: str, import_name: str = None) -> None:
     """Paket kurulu değilse script'in kendi Python'u ile otomatik kurar."""
-    import importlib
     import_name = import_name or pip_name
-
     try:
         __import__(import_name)
         return
     except ImportError:
         pass
-
     try:
         subprocess.check_call([sys.executable, "-m", "pip", "install", pip_name])
     except subprocess.CalledProcessError:
@@ -53,10 +51,7 @@ def _ensure_package(pip_name: str, import_name: str = None) -> None:
             f"Lütfen şu komutu çalıştırın:\n"
             f"{sys.executable} -m pip install {pip_name}"
         )
-
-    # Yeni kurulan paketi mevcut oturumda görünür kıl
     importlib.invalidate_caches()
-
     try:
         __import__(import_name)
     except ImportError:
@@ -66,18 +61,24 @@ def _ensure_package(pip_name: str, import_name: str = None) -> None:
         )
 
 
+# Üçüncü taraf kütüphaneleri kur ve import et
+_ensure_package("openpyxl")
+_ensure_package("h5py")
+_ensure_package("numpy")
+_ensure_package("pyNastran")
+
+import h5py
+import numpy as np
+import openpyxl
+from pyNastran.op2.op2 import OP2
+
+
 # ---------------------------------------------------------------------------
 # Çekirdek okuma fonksiyonları
 # ---------------------------------------------------------------------------
 
 def _read_op2(filepath: str, node_ids: List[int]) -> Dict:
     """OP2 dosyasından displacement verisi okur."""
-    _ensure_package("pyNastran")
-    try:
-        from pyNastran.op2.op2 import OP2
-    except ImportError:
-        raise ImportError("pyNastran kurulamadı. Lütfen manuel olarak: pip install pyNastran")
-
     op2 = OP2(debug=False)
     op2.read_op2(filepath)
 
@@ -111,14 +112,6 @@ def _read_op2(filepath: str, node_ids: List[int]) -> Dict:
 
 def _read_h5(filepath: str, node_ids: List[int]) -> Dict:
     """NASTRAN HDF5 dosyasından displacement verisi okur."""
-    _ensure_package("h5py")
-    _ensure_package("numpy")
-    try:
-        import h5py
-        import numpy as np
-    except ImportError:
-        raise ImportError("h5py veya numpy kurulamadı. Lütfen manuel olarak: pip install h5py numpy")
-
     node_set = set(node_ids)
     results = {}
 
@@ -262,12 +255,6 @@ def _read_node_ids_from_file(filepath: str) -> List[int]:
 
 
 def _read_node_ids_xlsx(filepath: str) -> List[int]:
-    _ensure_package("openpyxl")
-    try:
-        import openpyxl
-    except ImportError:
-        raise ImportError("openpyxl kurulamadı. Lütfen manuel olarak: pip install openpyxl")
-
     wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
     ws = wb.active
     node_ids = []
@@ -287,8 +274,6 @@ def _read_node_ids_xlsx(filepath: str) -> List[int]:
 
 
 def _read_node_ids_csv(filepath: str) -> List[int]:
-    import csv
-
     node_ids = []
     with open(filepath, newline="", encoding="utf-8-sig") as f:
         reader = csv.reader(f)
