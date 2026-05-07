@@ -178,15 +178,24 @@ def print_results(results: Dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Excel yardımcısı
+# Node ID dosya okuyucusu (Excel / CSV)
 # ---------------------------------------------------------------------------
 
-def _read_node_ids_from_excel(filepath: str) -> List[int]:
-    """Excel dosyasının A sütunundan node ID listesi okur.
+def _read_node_ids_from_file(filepath: str) -> List[int]:
+    """Excel (.xlsx, .xlsm) veya CSV dosyasının ilk sütunundan node ID listesi okur.
 
-    İlk satır başlık ise (sayı değilse) otomatik atlanır.
-    Boş hücreler görmezden gelinir.
+    Sayı olmayan hücreler (başlık satırı dahil) ve boş hücreler atlanır.
     """
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext in (".xlsx", ".xlsm"):
+        return _read_node_ids_xlsx(filepath)
+    elif ext == ".csv":
+        return _read_node_ids_csv(filepath)
+    else:
+        raise ValueError(f"Desteklenmeyen dosya türü: '{ext}'. Lütfen .xlsx, .xlsm veya .csv kullanın.")
+
+
+def _read_node_ids_xlsx(filepath: str) -> List[int]:
     try:
         import openpyxl
     except ImportError:
@@ -194,7 +203,6 @@ def _read_node_ids_from_excel(filepath: str) -> List[int]:
 
     wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
     ws = wb.active
-
     node_ids = []
     for row in ws.iter_rows(min_col=1, max_col=1, values_only=True):
         val = row[0]
@@ -203,13 +211,30 @@ def _read_node_ids_from_excel(filepath: str) -> List[int]:
         try:
             node_ids.append(int(val))
         except (TypeError, ValueError):
-            pass  # başlık satırı veya sayı olmayan hücre — atla
-
+            pass
     wb.close()
 
     if not node_ids:
         raise ValueError("Excel dosyasının A sütununda geçerli node ID bulunamadı.")
+    return node_ids
 
+
+def _read_node_ids_csv(filepath: str) -> List[int]:
+    import csv
+
+    node_ids = []
+    with open(filepath, newline="", encoding="utf-8-sig") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            if not row:
+                continue
+            try:
+                node_ids.append(int(row[0].strip()))
+            except (ValueError, IndexError):
+                pass  # başlık veya sayı olmayan satır — atla
+
+    if not node_ids:
+        raise ValueError("CSV dosyasının ilk sütununda geçerli node ID bulunamadı.")
     return node_ids
 
 
@@ -242,12 +267,12 @@ class LoadExtractionApp:
         )
 
         # --- Node ID girişi (Excel) ---
-        node_frame = ttk.LabelFrame(self.root, text="Node ID Listesi (Excel)")
+        node_frame = ttk.LabelFrame(self.root, text="Node ID Listesi (Excel / CSV)")
         node_frame.pack(fill="x", **pad)
 
         ttk.Label(
             node_frame,
-            text="Node ID'leri içeren Excel dosyasını seçin  (A sütunu, başlık satırı varsa otomatik atlanır)",
+            text="Node ID'leri içeren dosyayı seçin  (.xlsx, .xlsm, .csv — ilk sütun, başlık varsa otomatik atlanır)",
             foreground="gray",
         ).pack(anchor="w", padx=8, pady=(4, 0))
 
@@ -320,9 +345,11 @@ class LoadExtractionApp:
 
     def _browse_excel(self):
         path = filedialog.askopenfilename(
-            title="Node ID listesi içeren Excel dosyasını seç",
+            title="Node ID listesi içeren dosyayı seç",
             filetypes=[
-                ("Excel Dosyaları", "*.xlsx *.xls *.xlsm"),
+                ("Desteklenen Dosyalar", "*.xlsx *.xlsm *.csv"),
+                ("Excel Dosyaları", "*.xlsx *.xlsm"),
+                ("CSV Dosyaları", "*.csv"),
                 ("Tüm Dosyalar", "*.*"),
             ],
         )
@@ -330,7 +357,7 @@ class LoadExtractionApp:
             return
         self.excel_var.set(path)
         try:
-            self._node_ids = _read_node_ids_from_excel(path)
+            self._node_ids = _read_node_ids_from_file(path)
             self.node_info_var.set(f"{len(self._node_ids)} node yüklendi.")
         except Exception as e:
             self._node_ids = []
