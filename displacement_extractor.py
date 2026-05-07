@@ -117,20 +117,39 @@ def _read_h5(filepath: str, node_ids: List[int]) -> Dict:
         if domains_path not in f:
             raise ValueError("HDF5 dosyasında /NASTRAN/RESULT/DOMAINS bulunamadı.")
 
-        domain_ids = f[domains_path]["ID"][:]
-        subcases = f[domains_path]["SUBCASE"][:]
+        domains_ds = f[domains_path]
+        if hasattr(domains_ds, "dtype") and domains_ds.dtype.names:
+            domains_data = domains_ds[:]
+            domain_ids = domains_data["ID"]
+            subcases = domains_data["SUBCASE"]
+        else:
+            domain_ids = domains_ds["ID"][:]
+            subcases = domains_ds["SUBCASE"][:]
         domain_to_subcase = dict(zip(domain_ids.tolist(), subcases.tolist()))
 
         disp_path = "/NASTRAN/RESULT/NODAL/DISPLACEMENT"
         if disp_path not in f:
             raise ValueError(f"HDF5 dosyasında displacement sonucu bulunamadı. Beklenen: {disp_path}")
 
-        disp_grp = f[disp_path]
-        file_node_ids = disp_grp["ID"][:]
-        domain_id_arr = disp_grp["DOMAIN_ID"][:]
-        t1_arr = disp_grp["T1"][:]
-        t2_arr = disp_grp["T2"][:]
-        t3_arr = disp_grp["T3"][:]
+        disp_ds = f[disp_path]
+
+        # MSC Nastran HDF5: tek compound dataset (sütunlar: ID, T1, T2, T3, DOMAIN_ID ...)
+        # NX Nastran HDF5:  ayrı alt-dataset'ler
+        if hasattr(disp_ds, "dtype") and disp_ds.dtype.names:
+            # Compound dataset
+            disp_data = disp_ds[:]
+            file_node_ids = disp_data["ID"]
+            domain_id_arr = disp_data["DOMAIN_ID"]
+            t1_arr = disp_data["T1"]
+            t2_arr = disp_data["T2"]
+            t3_arr = disp_data["T3"]
+        else:
+            # Alt-dataset yapısı
+            file_node_ids = disp_ds["ID"][:]
+            domain_id_arr = disp_ds["DOMAIN_ID"][:]
+            t1_arr = disp_ds["T1"][:]
+            t2_arr = disp_ds["T2"][:]
+            t3_arr = disp_ds["T3"][:]
 
         unique_domains = np.unique(domain_id_arr)
         for domain_id in unique_domains:
