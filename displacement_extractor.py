@@ -447,6 +447,8 @@ class LoadExtractionApp:
         self._node_ids: List[int] = []
         self._node_to_prop: dict = {}
         self._prop_dims: dict = {}
+        self._base_prop_dims: dict = {}
+        self._last_results: Dict = {}
 
         # --- Çalıştır butonu + durum ---
         ctrl_frame = ttk.Frame(self.root)
@@ -470,6 +472,13 @@ class LoadExtractionApp:
             self.result_type_frame, text="Relative", variable=self.result_type,
             value="relative"
         ).pack(side="left", padx=4)
+
+        self.add100_var = tk.BooleanVar(value=False)
+        self.add100_cb = ttk.Checkbutton(
+            ctrl_frame, text="+100mm Panel Length & Width",
+            variable=self.add100_var, command=self._on_add100_toggle,
+        )
+        self.add100_cb.pack(side="left", padx=10)
 
         self.status_var = tk.StringVar(value="Hazır.")
         ttk.Label(ctrl_frame, textvariable=self.status_var, foreground="gray").pack(
@@ -525,6 +534,9 @@ class LoadExtractionApp:
         self._node_ids = []
         self._node_to_prop = {}
         self._prop_dims = {}
+        self._base_prop_dims = {}
+        self._last_results = {}
+        self.add100_var.set(False)
         self.node_info_var.set("Henüz dosya seçilmedi.")
         self.excel_var.set("")
 
@@ -621,6 +633,7 @@ class LoadExtractionApp:
             self.root.after(0, lambda: self.status_var.set("BDF okunuyor..."))
             node_ids, node_to_prop, prop_dims = _get_nodes_from_props(bdf_path, prop_ids)
             self._node_to_prop = node_to_prop
+            self._base_prop_dims = prop_dims.copy()
             self._prop_dims = prop_dims
             self.root.after(0, lambda: self.status_var.set(f"{len(node_ids)} node bulundu, sonuçlar okunuyor..."))
             results = extract_displacements(filepath, node_ids)
@@ -671,8 +684,19 @@ class LoadExtractionApp:
                 }
         return rel
 
+    def _on_add100_toggle(self):
+        if not self._base_prop_dims or not self._last_results:
+            return
+        if self.add100_var.get():
+            self._prop_dims = {pid: (l + 100.0, w + 100.0) for pid, (l, w) in self._base_prop_dims.items()}
+        else:
+            self._prop_dims = self._base_prop_dims.copy()
+        self._populate_table(self._last_results)
+
     def _populate_table(self, results: Dict):
         self._clear_table()
+        if results:
+            self._last_results = results
 
         if not results:
             self.status_var.set("Sonuç bulunamadı.")
