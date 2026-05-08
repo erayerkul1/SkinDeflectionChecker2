@@ -65,6 +65,24 @@ if _missing:
 
 
 # ---------------------------------------------------------------------------
+# Treeview sütun sabitleri
+# ---------------------------------------------------------------------------
+
+_ALL_COLS = (
+    "Subcase", "Prop", "Length", "Width", "Node",
+    "T1", "T2", "T3", "Resultant",
+    "Max T1", "Min T1", "Max T2", "Min T2",
+    "Max T3", "Min T3", "Max Res", "Min Res",
+)
+_DISPLAY_ABS_NODE = ("Subcase", "Node", "T1", "T2", "T3", "Resultant")
+_DISPLAY_ABS_PROP = ("Subcase", "Prop", "Length", "Width", "Node", "T1", "T2", "T3", "Resultant")
+_DISPLAY_REL_PROP = (
+    "Subcase", "Prop",
+    "Max T1", "Min T1", "Max T2", "Min T2",
+    "Max T3", "Min T3", "Max Res", "Min Res",
+)
+
+# ---------------------------------------------------------------------------
 # Çekirdek okuma fonksiyonları
 # ---------------------------------------------------------------------------
 
@@ -407,6 +425,19 @@ class LoadExtractionApp:
         self.export_btn = ttk.Button(ctrl_frame, text="Excel'e Aktar", command=self._export_excel)
         self.export_btn.pack(side="left", padx=6)
 
+        # Sonuç türü (sadece Prop ID modunda görünür)
+        self.result_type = tk.StringVar(value="absolute")
+        self.result_type_frame = ttk.Frame(ctrl_frame)
+        ttk.Label(self.result_type_frame, text="Sonuç:").pack(side="left")
+        ttk.Radiobutton(
+            self.result_type_frame, text="Mutlak", variable=self.result_type,
+            value="absolute"
+        ).pack(side="left", padx=(4, 0))
+        ttk.Radiobutton(
+            self.result_type_frame, text="Relative", variable=self.result_type,
+            value="relative"
+        ).pack(side="left", padx=4)
+
         self.status_var = tk.StringVar(value="Hazır.")
         ttk.Label(ctrl_frame, textvariable=self.status_var, foreground="gray").pack(
             side="left", padx=12
@@ -416,15 +447,16 @@ class LoadExtractionApp:
         result_frame = ttk.LabelFrame(self.root, text="Sonuçlar")
         result_frame.pack(fill="both", expand=True, **pad)
 
-        columns = ("Subcase", "Prop", "Length", "Width", "Node", "T1", "T2", "T3", "Resultant")
-        self.tree = ttk.Treeview(result_frame, columns=columns, show="headings")
-        self.tree["displaycolumns"] = ("Subcase", "Node", "T1", "T2", "T3", "Resultant")
+        self.tree = ttk.Treeview(result_frame, columns=_ALL_COLS, show="headings")
+        self.tree["displaycolumns"] = _DISPLAY_ABS_NODE
 
         col_widths = {
             "Subcase": 70, "Prop": 80, "Length": 100, "Width": 100,
-            "Node": 80, "T1": 130, "T2": 130, "T3": 130, "Resultant": 130,
+            "Node": 80, "T1": 110, "T2": 110, "T3": 110, "Resultant": 110,
+            "Max T1": 100, "Min T1": 100, "Max T2": 100, "Min T2": 100,
+            "Max T3": 100, "Min T3": 100, "Max Res": 100, "Min Res": 100,
         }
-        for col in columns:
+        for col in _ALL_COLS:
             self.tree.heading(col, text=col)
             self.tree.column(col, width=col_widths[col], anchor="center")
 
@@ -446,11 +478,14 @@ class LoadExtractionApp:
         if self.input_type.get() == "prop":
             self.bdf_frame.pack(fill="x", padx=10, pady=5, before=self.node_frame)
             self.node_frame.configure(text="Prop ID Listesi (Excel / CSV)")
-            self.tree["displaycolumns"] = ("Subcase", "Prop", "Length", "Width", "Node", "T1", "T2", "T3", "Resultant")
+            self.result_type_frame.pack(side="left", padx=12)
+            self.tree["displaycolumns"] = _DISPLAY_ABS_PROP
         else:
             self.bdf_frame.pack_forget()
             self.node_frame.configure(text="Node ID Listesi (Excel / CSV)")
-            self.tree["displaycolumns"] = ("Subcase", "Node", "T1", "T2", "T3", "Resultant")
+            self.result_type_frame.pack_forget()
+            self.result_type.set("absolute")
+            self.tree["displaycolumns"] = _DISPLAY_ABS_NODE
         self._node_ids = []
         self._node_to_prop = {}
         self._prop_dims = {}
@@ -561,6 +596,45 @@ class LoadExtractionApp:
         for row in self.tree.get_children():
             self.tree.delete(row)
 
+    def _compute_relative(self, results: Dict) -> Dict:
+        """Her prop için rölatif displacement özetini hesaplar.
+
+        Referans: prop içindeki min Resultant'lı node.
+        Dönüş: {subcase_id: {prop_id: {MaxT1, MinT1, MaxT2, MinT2, MaxT3, MinT3, MaxRes, MinRes}}}
+        """
+        rel: Dict = {}
+        for subcase_id, node_data in results.items():
+            prop_groups: Dict = {}
+            for nid, d in node_data.items():
+                pid = self._node_to_prop.get(nid)
+                if pid is None:
+                    continue
+                prop_groups.setdefault(pid, []).append(d)
+
+            rel[subcase_id] = {}
+            for pid, entries in prop_groups.items():
+                ref = min(entries, key=lambda e: e["Resultant"])
+                rels = []
+                for e in entries:
+                    rt1 = e["T1"] - ref["T1"]
+                    rt2 = e["T2"] - ref["T2"]
+                    rt3 = e["T3"] - ref["T3"]
+                    rels.append({
+                        "T1": rt1, "T2": rt2, "T3": rt3,
+                        "Res": math.sqrt(rt1**2 + rt2**2 + rt3**2),
+                    })
+                rel[subcase_id][pid] = {
+                    "MaxT1":  max(r["T1"]  for r in rels),
+                    "MinT1":  min(r["T1"]  for r in rels),
+                    "MaxT2":  max(r["T2"]  for r in rels),
+                    "MinT2":  min(r["T2"]  for r in rels),
+                    "MaxT3":  max(r["T3"]  for r in rels),
+                    "MinT3":  min(r["T3"]  for r in rels),
+                    "MaxRes": max(r["Res"] for r in rels),
+                    "MinRes": min(r["Res"] for r in rels),
+                }
+        return rel
+
     def _populate_table(self, results: Dict):
         self._clear_table()
 
@@ -571,40 +645,57 @@ class LoadExtractionApp:
 
         row_count = 0
         warnings = []
+        is_prop = self.input_type.get() == "prop"
+        is_rel = is_prop and self.result_type.get() == "relative"
 
-        for subcase_id in sorted(results):
-            node_data = results[subcase_id]
-            if not node_data:
-                warnings.append(f"Subcase {subcase_id}: hiç node bulunamadı.")
-                continue
-
-            for nid in sorted(node_data):
-                d = node_data[nid]
-                tag = "odd" if row_count % 2 else "even"
-                if self.input_type.get() == "prop":
-                    prop_val = self._node_to_prop.get(nid, "")
-                    length_val, width_val = self._prop_dims.get(prop_val, ("", ""))
-                    length_str = f"{length_val:.3f}" if isinstance(length_val, float) else ""
-                    width_str = f"{width_val:.3f}" if isinstance(width_val, float) else ""
-                else:
-                    prop_val = length_str = width_str = ""
-                self.tree.insert(
-                    "",
-                    "end",
-                    values=(
-                        subcase_id,
-                        prop_val,
-                        length_str,
-                        width_str,
-                        nid,
-                        f"{d['T1']:.3f}",
-                        f"{d['T2']:.3f}",
-                        f"{d['T3']:.3f}",
-                        f"{d['Resultant']:.3f}",
-                    ),
-                    tags=(tag,),
-                )
-                row_count += 1
+        if is_rel:
+            self.tree["displaycolumns"] = _DISPLAY_REL_PROP
+            rel = self._compute_relative(results)
+            for subcase_id in sorted(rel):
+                for pid in sorted(rel[subcase_id]):
+                    d = rel[subcase_id][pid]
+                    tag = "odd" if row_count % 2 else "even"
+                    self.tree.insert(
+                        "", "end",
+                        values=(
+                            subcase_id, pid, "", "", "",
+                            "", "", "", "",
+                            f"{d['MaxT1']:.3f}", f"{d['MinT1']:.3f}",
+                            f"{d['MaxT2']:.3f}", f"{d['MinT2']:.3f}",
+                            f"{d['MaxT3']:.3f}", f"{d['MinT3']:.3f}",
+                            f"{d['MaxRes']:.3f}", f"{d['MinRes']:.3f}",
+                        ),
+                        tags=(tag,),
+                    )
+                    row_count += 1
+        else:
+            self.tree["displaycolumns"] = _DISPLAY_ABS_PROP if is_prop else _DISPLAY_ABS_NODE
+            for subcase_id in sorted(results):
+                node_data = results[subcase_id]
+                if not node_data:
+                    warnings.append(f"Subcase {subcase_id}: hiç node bulunamadı.")
+                    continue
+                for nid in sorted(node_data):
+                    d = node_data[nid]
+                    tag = "odd" if row_count % 2 else "even"
+                    if is_prop:
+                        prop_val = self._node_to_prop.get(nid, "")
+                        length_val, width_val = self._prop_dims.get(prop_val, ("", ""))
+                        length_str = f"{length_val:.3f}" if isinstance(length_val, float) else ""
+                        width_str = f"{width_val:.3f}" if isinstance(width_val, float) else ""
+                    else:
+                        prop_val = length_str = width_str = ""
+                    self.tree.insert(
+                        "", "end",
+                        values=(
+                            subcase_id, prop_val, length_str, width_str, nid,
+                            f"{d['T1']:.3f}", f"{d['T2']:.3f}", f"{d['T3']:.3f}",
+                            f"{d['Resultant']:.3f}",
+                            "", "", "", "", "", "", "", "",
+                        ),
+                        tags=(tag,),
+                    )
+                    row_count += 1
 
         status = f"{row_count} satır gösteriliyor."
         if warnings:
