@@ -77,7 +77,7 @@ _ALL_COLS = (
 _DISPLAY_ABS_NODE = ("Subcase", "Node", "T1", "T2", "T3", "Resultant")
 _DISPLAY_ABS_PROP = ("Subcase", "Prop", "Length", "Width", "Node", "T1", "T2", "T3", "Resultant")
 _DISPLAY_REL_PROP = (
-    "Subcase", "Prop",
+    "Subcase", "Prop", "Length", "Width",
     "Max T1", "Min T1", "Max T2", "Min T2",
     "Max T3", "Min T3", "Max Res", "Min Res",
 )
@@ -676,10 +676,13 @@ class LoadExtractionApp:
                 for pid in sorted(rel[subcase_id]):
                     d = rel[subcase_id][pid]
                     tag = "odd" if row_count % 2 else "even"
+                    length_val, width_val = self._prop_dims.get(pid, ("", ""))
+                    length_str = f"{length_val:.3f}" if isinstance(length_val, float) else ""
+                    width_str = f"{width_val:.3f}" if isinstance(width_val, float) else ""
                     self.tree.insert(
                         "", "end",
                         values=(
-                            subcase_id, pid, "", "", "",
+                            subcase_id, pid, length_str, width_str, "",
                             "", "", "", "",
                             f"{d['MaxT1']:.3f}", f"{d['MinT1']:.3f}",
                             f"{d['MaxT2']:.3f}", f"{d['MinT2']:.3f}",
