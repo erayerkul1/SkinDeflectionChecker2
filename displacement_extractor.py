@@ -145,23 +145,44 @@ def _read_h5(filepath: str, node_ids: List[int]) -> Dict:
 
         disp_ds = f[disp_path]
 
+        def _pick(names, candidates):
+            for c in candidates:
+                if c in names:
+                    return c
+            raise ValueError(
+                f"HDF5 displacement dataset'inde beklenen alan bulunamadı.\n"
+                f"Denenen: {candidates}\nMevcut: {list(names)}"
+            )
+
         # MSC Nastran HDF5: tek compound dataset (sütunlar: ID, T1, T2, T3, DOMAIN_ID ...)
         # NX Nastran HDF5:  ayrı alt-dataset'ler
         if hasattr(disp_ds, "dtype") and disp_ds.dtype.names:
             # Compound dataset
             disp_data = disp_ds[:]
-            file_node_ids = disp_data["ID"]
-            domain_id_arr = disp_data["DOMAIN_ID"]
-            t1_arr = disp_data["T1"]
-            t2_arr = disp_data["T2"]
-            t3_arr = disp_data["T3"]
+            names = disp_data.dtype.names
+            id_f  = _pick(names, ["ID", "GRID_ID", "NID"])
+            dom_f = _pick(names, ["DOMAIN_ID", "DOMAIN"])
+            t1_f  = _pick(names, ["T1", "DX", "X1"])
+            t2_f  = _pick(names, ["T2", "DY", "X2"])
+            t3_f  = _pick(names, ["T3", "DZ", "X3"])
+            file_node_ids = disp_data[id_f]
+            domain_id_arr = disp_data[dom_f]
+            t1_arr = disp_data[t1_f]
+            t2_arr = disp_data[t2_f]
+            t3_arr = disp_data[t3_f]
         else:
             # Alt-dataset yapısı
-            file_node_ids = disp_ds["ID"][:]
-            domain_id_arr = disp_ds["DOMAIN_ID"][:]
-            t1_arr = disp_ds["T1"][:]
-            t2_arr = disp_ds["T2"][:]
-            t3_arr = disp_ds["T3"][:]
+            keys = list(disp_ds.keys())
+            id_f  = _pick(keys, ["ID", "GRID_ID", "NID"])
+            dom_f = _pick(keys, ["DOMAIN_ID", "DOMAIN"])
+            t1_f  = _pick(keys, ["T1", "DX", "X1"])
+            t2_f  = _pick(keys, ["T2", "DY", "X2"])
+            t3_f  = _pick(keys, ["T3", "DZ", "X3"])
+            file_node_ids = disp_ds[id_f][:]
+            domain_id_arr = disp_ds[dom_f][:]
+            t1_arr = disp_ds[t1_f][:]
+            t2_arr = disp_ds[t2_f][:]
+            t3_arr = disp_ds[t3_f][:]
 
         unique_domains = np.unique(domain_id_arr)
         for domain_id in unique_domains:
