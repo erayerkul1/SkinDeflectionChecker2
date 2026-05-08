@@ -446,7 +446,6 @@ class LoadExtractionApp:
 
         self._node_ids: List[int] = []
         self._node_to_prop: dict = {}
-        self._prop_dims: dict = {}
         self._base_prop_dims: dict = {}
         self._last_results: Dict = {}
 
@@ -533,7 +532,6 @@ class LoadExtractionApp:
             self.tree["displaycolumns"] = _DISPLAY_ABS_NODE
         self._node_ids = []
         self._node_to_prop = {}
-        self._prop_dims = {}
         self._base_prop_dims = {}
         self._last_results = {}
         self.add100_var.set(False)
@@ -633,8 +631,7 @@ class LoadExtractionApp:
             self.root.after(0, lambda: self.status_var.set("BDF okunuyor..."))
             node_ids, node_to_prop, prop_dims = _get_nodes_from_props(bdf_path, prop_ids)
             self._node_to_prop = node_to_prop
-            self._base_prop_dims = prop_dims.copy()
-            self._prop_dims = prop_dims
+            self._base_prop_dims = prop_dims
             self.root.after(0, lambda: self.status_var.set(f"{len(node_ids)} node bulundu, sonuçlar okunuyor..."))
             results = extract_displacements(filepath, node_ids)
             self.root.after(0, self._populate_table, results)
@@ -684,13 +681,14 @@ class LoadExtractionApp:
                 }
         return rel
 
+    def _effective_dims(self) -> dict:
+        if self.add100_var.get():
+            return {pid: (l + 100.0, w + 100.0) for pid, (l, w) in self._base_prop_dims.items()}
+        return self._base_prop_dims
+
     def _on_add100_toggle(self):
         if not self._base_prop_dims or not self._last_results:
             return
-        if self.add100_var.get():
-            self._prop_dims = {pid: (l + 100.0, w + 100.0) for pid, (l, w) in self._base_prop_dims.items()}
-        else:
-            self._prop_dims = self._base_prop_dims.copy()
         self._populate_table(self._last_results)
 
     def _populate_table(self, results: Dict):
@@ -714,7 +712,7 @@ class LoadExtractionApp:
             for subcase_id in sorted(rel):
                 for pid in sorted(rel[subcase_id]):
                     d = rel[subcase_id][pid]
-                    length_val, width_val = self._prop_dims.get(pid, ("", ""))
+                    length_val, width_val = self._effective_dims().get(pid, ("", ""))
                     length_str = f"{length_val:.3f}" if isinstance(length_val, float) else ""
                     width_str = f"{width_val:.3f}" if isinstance(width_val, float) else ""
                     status = _fail_pass(d["MaxRes"], length_val) if isinstance(length_val, float) else "-"
@@ -744,7 +742,7 @@ class LoadExtractionApp:
                     d = node_data[nid]
                     if is_prop:
                         prop_val = self._node_to_prop.get(nid, "")
-                        length_val, width_val = self._prop_dims.get(prop_val, ("", ""))
+                        length_val, width_val = self._effective_dims().get(prop_val, ("", ""))
                         length_str = f"{length_val:.3f}" if isinstance(length_val, float) else ""
                         width_str = f"{width_val:.3f}" if isinstance(width_val, float) else ""
                         status = _fail_pass(d["Resultant"], length_val) if isinstance(length_val, float) else "-"
