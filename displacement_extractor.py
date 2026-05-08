@@ -162,9 +162,9 @@ def _read_h5(filepath: str, node_ids: List[int]) -> Dict:
             names = disp_data.dtype.names
             id_f  = _pick(names, ["ID", "GRID_ID", "NID"])
             dom_f = _pick(names, ["DOMAIN_ID", "DOMAIN"])
-            t1_f  = _pick(names, ["T1", "DX", "X1"])
-            t2_f  = _pick(names, ["T2", "DY", "X2"])
-            t3_f  = _pick(names, ["T3", "DZ", "X3"])
+            t1_f  = _pick(names, ["T1", "DX", "X1", "X"])
+            t2_f  = _pick(names, ["T2", "DY", "X2", "Y"])
+            t3_f  = _pick(names, ["T3", "DZ", "X3", "Z"])
             file_node_ids = disp_data[id_f]
             domain_id_arr = disp_data[dom_f]
             t1_arr = disp_data[t1_f]
@@ -175,9 +175,9 @@ def _read_h5(filepath: str, node_ids: List[int]) -> Dict:
             keys = list(disp_ds.keys())
             id_f  = _pick(keys, ["ID", "GRID_ID", "NID"])
             dom_f = _pick(keys, ["DOMAIN_ID", "DOMAIN"])
-            t1_f  = _pick(keys, ["T1", "DX", "X1"])
-            t2_f  = _pick(keys, ["T2", "DY", "X2"])
-            t3_f  = _pick(keys, ["T3", "DZ", "X3"])
+            t1_f  = _pick(keys, ["T1", "DX", "X1", "X"])
+            t2_f  = _pick(keys, ["T2", "DY", "X2", "Y"])
+            t3_f  = _pick(keys, ["T3", "DZ", "X3", "Z"])
             file_node_ids = disp_ds[id_f][:]
             domain_id_arr = disp_ds[dom_f][:]
             t1_arr = disp_ds[t1_f][:]
