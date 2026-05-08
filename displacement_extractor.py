@@ -73,14 +73,26 @@ _ALL_COLS = (
     "T1", "T2", "T3", "Resultant",
     "Max T1", "Min T1", "Max T2", "Min T2",
     "Max T3", "Min T3", "Max Res", "Min Res",
+    "Status",
 )
 _DISPLAY_ABS_NODE = ("Subcase", "Node", "T1", "T2", "T3", "Resultant")
-_DISPLAY_ABS_PROP = ("Subcase", "Prop", "Length", "Width", "Node", "T1", "T2", "T3", "Resultant")
+_DISPLAY_ABS_PROP = ("Subcase", "Prop", "Length", "Width", "Node", "T1", "T2", "T3", "Resultant", "Status")
 _DISPLAY_REL_PROP = (
     "Subcase", "Prop", "Length", "Width",
     "Max T1", "Min T1", "Max T2", "Min T2",
     "Max T3", "Min T3", "Max Res", "Min Res",
+    "Status",
 )
+
+def _fail_pass(disp: float, length: float) -> str:
+    """Panel uzunluğuna göre displacement limit kontrolü."""
+    if length <= 0:
+        return "-"
+    if length < 508.0:
+        return "FAIL" if disp / length > 0.015 else "PASS"
+    else:
+        return "FAIL" if disp > 7.62 else "PASS"
+
 
 # ---------------------------------------------------------------------------
 # Çekirdek okuma fonksiyonları
@@ -476,6 +488,7 @@ class LoadExtractionApp:
             "Node": 80, "T1": 110, "T2": 110, "T3": 110, "Resultant": 110,
             "Max T1": 100, "Min T1": 100, "Max T2": 100, "Min T2": 100,
             "Max T3": 100, "Min T3": 100, "Max Res": 100, "Min Res": 100,
+            "Status": 70,
         }
         for col in _ALL_COLS:
             self.tree.heading(col, text=col)
@@ -494,6 +507,8 @@ class LoadExtractionApp:
         # Subcase grupları için renk etiketleri
         self.tree.tag_configure("odd", background="#f5f5f5")
         self.tree.tag_configure("even", background="#ffffff")
+        self.tree.tag_configure("fail_odd", background="#ffcccc")
+        self.tree.tag_configure("fail_even", background="#ffdddd")
 
     def _on_input_type_change(self):
         if self.input_type.get() == "prop":
@@ -675,10 +690,11 @@ class LoadExtractionApp:
             for subcase_id in sorted(rel):
                 for pid in sorted(rel[subcase_id]):
                     d = rel[subcase_id][pid]
-                    tag = "odd" if row_count % 2 else "even"
                     length_val, width_val = self._prop_dims.get(pid, ("", ""))
                     length_str = f"{length_val:.3f}" if isinstance(length_val, float) else ""
                     width_str = f"{width_val:.3f}" if isinstance(width_val, float) else ""
+                    status = _fail_pass(d["MaxRes"], length_val) if isinstance(length_val, float) else "-"
+                    tag = ("fail_odd" if row_count % 2 else "fail_even") if status == "FAIL" else ("odd" if row_count % 2 else "even")
                     self.tree.insert(
                         "", "end",
                         values=(
@@ -688,6 +704,7 @@ class LoadExtractionApp:
                             f"{d['MaxT2']:.3f}", f"{d['MinT2']:.3f}",
                             f"{d['MaxT3']:.3f}", f"{d['MinT3']:.3f}",
                             f"{d['MaxRes']:.3f}", f"{d['MinRes']:.3f}",
+                            status,
                         ),
                         tags=(tag,),
                     )
@@ -701,14 +718,15 @@ class LoadExtractionApp:
                     continue
                 for nid in sorted(node_data):
                     d = node_data[nid]
-                    tag = "odd" if row_count % 2 else "even"
                     if is_prop:
                         prop_val = self._node_to_prop.get(nid, "")
                         length_val, width_val = self._prop_dims.get(prop_val, ("", ""))
                         length_str = f"{length_val:.3f}" if isinstance(length_val, float) else ""
                         width_str = f"{width_val:.3f}" if isinstance(width_val, float) else ""
+                        status = _fail_pass(d["Resultant"], length_val) if isinstance(length_val, float) else "-"
                     else:
-                        prop_val = length_str = width_str = ""
+                        prop_val = length_str = width_str = status = ""
+                    tag = ("fail_odd" if row_count % 2 else "fail_even") if status == "FAIL" else ("odd" if row_count % 2 else "even")
                     self.tree.insert(
                         "", "end",
                         values=(
@@ -716,6 +734,7 @@ class LoadExtractionApp:
                             f"{d['T1']:.3f}", f"{d['T2']:.3f}", f"{d['T3']:.3f}",
                             f"{d['Resultant']:.3f}",
                             "", "", "", "", "", "", "", "",
+                            status,
                         ),
                         tags=(tag,),
                     )
