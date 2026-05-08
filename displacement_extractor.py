@@ -477,7 +477,7 @@ class LoadExtractionApp:
             ctrl_frame, text="+100mm Panel Length & Width",
             variable=self.add100_var, command=self._on_add100_toggle,
         )
-        self.add100_cb.pack(side="left", padx=10)
+        # Başlangıçta gizli — Prop ID modunda gösterilir
 
         self.status_var = tk.StringVar(value="Hazır.")
         ttk.Label(ctrl_frame, textvariable=self.status_var, foreground="gray").pack(
@@ -523,11 +523,13 @@ class LoadExtractionApp:
             self.bdf_frame.pack(fill="x", padx=10, pady=5, before=self.node_frame)
             self.node_frame.configure(text="Prop ID Listesi (Excel / CSV)")
             self.result_type_frame.pack(side="left", padx=12)
+            self.add100_cb.pack(side="left", padx=10)
             self.tree["displaycolumns"] = _DISPLAY_ABS_PROP
         else:
             self.bdf_frame.pack_forget()
             self.node_frame.configure(text="Node ID Listesi (Excel / CSV)")
             self.result_type_frame.pack_forget()
+            self.add100_cb.pack_forget()
             self.result_type.set("absolute")
             self.tree["displaycolumns"] = _DISPLAY_ABS_NODE
         self._node_ids = []
